@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 import { Readability } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
 import { chromium } from "playwright";
@@ -15,10 +16,15 @@ const MIN_ARTICLE_WORDS = 120;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 const IMAGE_TIMEOUT_MS = 20_000;
 const NAVIGATION_TIMEOUT_MS = 50_000;
+const DIRECT_FETCH_TIMEOUT_MS = 30_000;
 const NOISE_RE =
   /(^|[-_\s])(ad|ads|advert|advertisement|banner|breadcrumb|cookie|consent|comment|footer|header|masthead|menu|nav|newsletter|outbrain|paywall|popup|promo|recommend|related|share|sharing|sidebar|social|sponsor|subscribe|taboola|toolbar)([-_\s]|$)/i;
 const IMAGE_NOISE_RE =
   /(^|[-_\s])(avatar|badge|brand|emoji|favicon|headshot|icon|logo|pixel|profile|share|social|sprite|tracking)([-_\s]|$)/i;
+const INTERACTION_PROMPT_RE =
+  /^(?:press enter or click to view image in full size|click to (?:expand|enlarge|view) (?:the )?image|tap to (?:expand|enlarge|view) (?:the )?image|open (?:the )?image in full size)$/i;
+const ACCESS_PREVIEW_RE =
+  /\b(?:member[- ]only story|subscriber[- ]only|sign in to (?:continue|read)|subscribe to (?:continue|keep reading|read)|create an account to continue|unlock (?:this|the) (?:article|story)|already a subscriber)\b/i;
 const ARTICLE_TYPES = new Set([
   "Article",
   "NewsArticle",
@@ -31,9 +37,11 @@ const ARTICLE_TYPES = new Set([
 function usage() {
   return `Usage:
   article-to-pdf.mjs [options] URL [URL ...]
+  article-to-pdf.mjs [options] --article-file article.json [--article-file article.json ...]
 
 Options:
-  --combined              Create one reading packet instead of one PDF per URL
+  --combined              Create one reading packet instead of one PDF per article
+  --article-file FILE     Use one source-faithful article JSON file (repeatable)
   --output-dir DIR        Output directory (default: ./output)
   --page-size SIZE        Letter or A4 (default: Letter)
   --keep-html             Retain cleaned HTML beside each PDF for debugging
@@ -49,7 +57,7 @@ function parseArgs(argv) {
     keepHtml: false,
     outputDir: path.resolve(process.cwd(), "output"),
     pageSize: "Letter",
-    urls: [],
+    inputs: [],
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -61,6 +69,10 @@ function parseArgs(argv) {
       options.combined = true;
     } else if (value === "--keep-html") {
       options.keepHtml = true;
+    } else if (value === "--article-file") {
+      const next = argv[++index];
+      if (!next) throw new Error("--article-file requires a JSON file");
+      options.inputs.push({ kind: "article-file", value: path.resolve(process.cwd(), next) });
     } else if (value === "--output-dir") {
       const next = argv[++index];
       if (!next) throw new Error("--output-dir requires a directory");
@@ -83,11 +95,13 @@ function parseArgs(argv) {
       if (!["http:", "https:"].includes(parsed.protocol)) {
         throw new Error(`Only HTTP(S) URLs are supported: ${value}`);
       }
-      options.urls.push(parsed.href);
+      options.inputs.push({ kind: "url", value: parsed.href });
     }
   }
 
-  if (options.urls.length === 0) throw new Error("Provide at least one article URL");
+  if (options.inputs.length === 0) {
+    throw new Error("Provide at least one article URL or --article-file");
+  }
   return options;
 }
 
@@ -110,6 +124,15 @@ function wordCount(value) {
   return matches?.length || 0;
 }
 
+function documentBodyText(document) {
+  const selector = "p, h1, h2, h3, h4, h5, h6, li, blockquote, figcaption, pre, td, th, dt, dd";
+  const blocks = [...document.querySelectorAll(selector)].filter(
+    (element) => !element.querySelector(selector),
+  );
+  if (blocks.length) return cleanText(blocks.map((element) => element.textContent).join(" "));
+  return cleanText(document.body?.textContent);
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -120,7 +143,7 @@ function escapeHtml(value) {
 }
 
 function normalizeUrl(value, baseUrl) {
-  if (!value || /^data:/i.test(value)) return value || "";
+  if (!value) return "";
   try {
     const url = new URL(value, baseUrl);
     if (!["http:", "https:"].includes(url.protocol)) return "";
@@ -128,6 +151,11 @@ function normalizeUrl(value, baseUrl) {
   } catch {
     return "";
   }
+}
+
+function normalizeImageUrl(value, baseUrl) {
+  if (/^data:image\/(?:avif|gif|jpeg|png|webp);base64,/i.test(value || "")) return value;
+  return normalizeUrl(value, baseUrl);
 }
 
 function filenameFromTitle(title, fallback = "article") {
@@ -300,7 +328,7 @@ function bestSrcsetCandidate(srcset, baseUrl) {
       const [rawUrl, descriptor = ""] = entry.trim().split(/\s+/);
       const width = descriptor.endsWith("w") ? Number.parseInt(descriptor, 10) : 0;
       const density = descriptor.endsWith("x") ? Number.parseFloat(descriptor) * 1000 : 0;
-      return { score: width || density, url: normalizeUrl(rawUrl, baseUrl) };
+      return { score: width || density, url: normalizeImageUrl(rawUrl, baseUrl) };
     })
     .filter((candidate) => candidate.url)
     .sort((left, right) => right.score - left.score);
@@ -349,6 +377,11 @@ function sanitizeContent(contentHtml, baseUrl, title) {
     if (NOISE_RE.test(`${element.id} ${element.className}`)) element.remove();
   }
 
+  for (const element of [...root.querySelectorAll("p, div, span, small")]) {
+    const text = cleanText(element.textContent);
+    if (text && !element.querySelector("img") && INTERACTION_PROMPT_RE.test(text)) element.remove();
+  }
+
   for (const link of root.querySelectorAll("a[href]")) {
     const href = normalizeUrl(link.getAttribute("href"), baseUrl);
     if (href) {
@@ -366,7 +399,7 @@ function sanitizeContent(contentHtml, baseUrl, title) {
       "";
     const source =
       bestSrcsetCandidate(srcset, baseUrl) ||
-      normalizeUrl(
+      normalizeImageUrl(
         image.getAttribute("data-codex-current-src") ||
           image.getAttribute("data-src") ||
           image.getAttribute("data-lazy-src") ||
@@ -468,15 +501,62 @@ function sanitizeContent(contentHtml, baseUrl, title) {
   return root.innerHTML;
 }
 
+function shortError(error) {
+  return cleanText(error?.message || error).slice(0, 240);
+}
+
+async function directHttpFallback(page, url, navigationError) {
+  let response;
+  try {
+    response = await page.context().request.get(url, {
+      failOnStatusCode: false,
+      headers: {
+        Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.8",
+      },
+      timeout: DIRECT_FETCH_TIMEOUT_MS,
+    });
+    if (!response.ok()) throw new Error(`HTTP ${response.status()}`);
+    const contentType = (response.headers()["content-type"] || "").toLowerCase();
+    if (contentType && !contentType.includes("text/html") && !contentType.includes("application/xhtml+xml")) {
+      throw new Error(`unsupported content type ${contentType}`);
+    }
+    const html = await response.text();
+    if (!/<(?:html|body|article|main)\b/i.test(html)) throw new Error("response did not contain article HTML");
+    return {
+      html,
+      warnings: [
+        `Browser navigation failed: ${shortError(navigationError)}`,
+        "Used direct HTTP fallback; JavaScript-delayed content may be unavailable",
+      ],
+    };
+  } catch (fetchError) {
+    throw new Error(
+      `Browser navigation failed (${shortError(navigationError)}); direct HTTP fallback failed (${shortError(fetchError)})`,
+    );
+  }
+}
+
 async function renderSourcePage(page, url) {
   const warnings = [];
-  const response = await page.goto(url, {
-    waitUntil: "domcontentloaded",
-    timeout: NAVIGATION_TIMEOUT_MS,
-  });
-  if (!response) warnings.push("Navigation returned no HTTP response");
-  else if (response.status() >= 400) warnings.push(`Source returned HTTP ${response.status()}`);
+  let response;
+  try {
+    response = await page.goto(url, {
+      // Some article pages stream or defer a resource indefinitely. Treat the
+      // committed response as successful navigation, then wait for DOM readiness
+      // separately so usable server-rendered content is not discarded on timeout.
+      waitUntil: "commit",
+      timeout: NAVIGATION_TIMEOUT_MS,
+    });
+    if (!response) warnings.push("Navigation returned no HTTP response");
+    else if (response.status() >= 400) throw new Error(`source returned HTTP ${response.status()}`);
+  } catch (navigationError) {
+    return directHttpFallback(page, url, navigationError);
+  }
 
+  await page.waitForLoadState("domcontentloaded", { timeout: 15_000 }).catch(() => {
+    warnings.push("DOMContentLoaded timed out; continued with available rendered content");
+  });
   await page.waitForLoadState("networkidle", { timeout: 8_000 }).catch(() => {});
   await page.waitForTimeout(750);
   await page.evaluate(async () => {
@@ -502,10 +582,31 @@ async function renderSourcePage(page, url) {
   return { html: await page.content(), warnings };
 }
 
+function advertisedReadingMinutes(document) {
+  const primary =
+    document.querySelector("article, main, [role='main'], [itemprop='articleBody']") || document.body;
+  const candidates = [...primary.querySelectorAll("p, span, small, time, div")]
+    .map((element) => cleanText(element.textContent))
+    .filter((text) => text.length <= 100);
+  const text = candidates.join(" ") || cleanText(primary?.textContent).slice(0, 5_000);
+  const match = text.match(/(?:^|\D)(\d{1,3})\s*(?:min(?:ute)?s?)\s+(?:read|reading)\b/i);
+  if (!match) return 0;
+  const minutes = Number.parseInt(match[1], 10);
+  return minutes >= 1 && minutes <= 120 ? minutes : 0;
+}
+
+function hasAccessPreviewMarker(document) {
+  return [...document.querySelectorAll("p, span, small, div")].some((element) => {
+    const text = cleanText(element.textContent);
+    return text.length > 0 && text.length <= 180 && ACCESS_PREVIEW_RE.test(text);
+  });
+}
+
 function extractArticle(renderedHtml, sourceUrl) {
   const dom = new JSDOM(renderedHtml, { url: sourceUrl });
   const document = dom.window.document;
   const metadata = extractMetadata(document, sourceUrl);
+  const readingMinutes = advertisedReadingMinutes(document);
   const readable = new Readability(document.cloneNode(true), {
     charThreshold: 350,
     keepClasses: false,
@@ -531,11 +632,19 @@ function extractArticle(renderedHtml, sourceUrl) {
       : "";
   const cleanHtml = sanitizeContent(content, sourceUrl, title);
   const cleanDom = new JSDOM(cleanHtml);
-  const bodyText = cleanText(cleanDom.window.document.body.textContent);
+  const bodyText = documentBodyText(cleanDom.window.document);
   const words = wordCount(bodyText);
   const paragraphs = cleanDom.window.document.querySelectorAll("p").length;
-  if (words < MIN_ARTICLE_WORDS) {
-    throw new Error(`Extracted body is too short (${words} words); the page may be blocked or unsupported`);
+  const expectedMinimumWords = readingMinutes ? Math.max(MIN_ARTICLE_WORDS, readingMinutes * 80) : MIN_ARTICLE_WORDS;
+  if (hasAccessPreviewMarker(cleanDom.window.document)) {
+    throw new Error("Extracted an access preview instead of the public article; login or subscription may be required");
+  }
+  if (words < expectedMinimumWords) {
+    const expectation = readingMinutes ? `; the page advertises a ${readingMinutes}-minute read` : "";
+    throw new Error(`Extracted body is suspiciously short (${words} words${expectation})`);
+  }
+  if (words < 800 && /(?:…|\.\.\.)[”'\"]?$/.test(bodyText)) {
+    throw new Error(`Extracted body appears truncated (${words} words and an ellipsis ending)`);
   }
 
   return {
@@ -544,10 +653,79 @@ function extractArticle(renderedHtml, sourceUrl) {
     bodyHtml: cleanHtml,
     mode,
     paragraphs,
+    readingMinutes,
     subtitle,
     title,
     words,
   };
+}
+
+function normalizeSuppliedArticle(value, filePath = "article file") {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${filePath}: expected one JSON object`);
+  }
+
+  let sourceUrl;
+  try {
+    sourceUrl = new URL(cleanText(value.sourceUrl));
+  } catch {
+    throw new Error(`${filePath}: sourceUrl must be an absolute HTTP(S) URL`);
+  }
+  if (!["http:", "https:"].includes(sourceUrl.protocol)) {
+    throw new Error(`${filePath}: sourceUrl must be an absolute HTTP(S) URL`);
+  }
+
+  const title = cleanText(value.title);
+  if (!title) throw new Error(`${filePath}: title is required`);
+  if (typeof value.bodyHtml !== "string" || !cleanText(value.bodyHtml)) {
+    throw new Error(`${filePath}: bodyHtml is required`);
+  }
+
+  const bodyHtml = sanitizeContent(value.bodyHtml, sourceUrl.href, title);
+  const cleanDom = new JSDOM(bodyHtml);
+  const bodyText = documentBodyText(cleanDom.window.document);
+  const words = wordCount(bodyText);
+  const paragraphs = cleanDom.window.document.querySelectorAll("p").length;
+  if (hasAccessPreviewMarker(cleanDom.window.document)) {
+    throw new Error(`${filePath}: bodyHtml contains an access preview rather than a complete public article`);
+  }
+  if (words < MIN_ARTICLE_WORDS) {
+    throw new Error(`${filePath}: bodyHtml is too short (${words} words)`);
+  }
+  if (words < 800 && /(?:…|\.\.\.)[”'\"]?$/.test(bodyText)) {
+    throw new Error(`${filePath}: bodyHtml appears truncated (${words} words and an ellipsis ending)`);
+  }
+
+  const expectedWords = Number.parseInt(value.expectedWords, 10);
+  if (Number.isFinite(expectedWords) && expectedWords > 0 && words < Math.floor(expectedWords * 0.9)) {
+    throw new Error(`${filePath}: bodyHtml has ${words} words; expected about ${expectedWords}`);
+  }
+
+  const retrievalNote = cleanText(value.retrievalNote).slice(0, 300);
+  return {
+    author: cleanText(value.author),
+    bodyHtml,
+    canonicalUrl: sourceUrl.href,
+    loadWarnings: retrievalNote ? [retrievalNote] : [],
+    mode: "article-file",
+    paragraphs,
+    publication: cleanText(value.publication) || sourceUrl.hostname.replace(/^www\./, ""),
+    published: cleanText(value.published),
+    readingMinutes: 0,
+    subtitle: cleanText(value.subtitle),
+    title,
+    words,
+  };
+}
+
+async function loadArticleFile(filePath) {
+  let parsed;
+  try {
+    parsed = JSON.parse(await fs.readFile(filePath, "utf8"));
+  } catch (error) {
+    throw new Error(`${filePath}: could not read valid JSON (${shortError(error)})`);
+  }
+  return normalizeSuppliedArticle(parsed, filePath);
 }
 
 async function embedImages(article, request, sourceUrl) {
@@ -559,7 +737,11 @@ async function embedImages(article, request, sourceUrl) {
 
   for (const image of [...document.querySelectorAll("img")]) {
     const imageUrl = image.getAttribute("data-source-url") || image.src;
-    if (!imageUrl || imageUrl.startsWith("data:")) continue;
+    if (!imageUrl) continue;
+    if (imageUrl.startsWith("data:image/")) {
+      embedded += 1;
+      continue;
+    }
     let result = cache.get(imageUrl);
     if (!result) {
       try {
@@ -782,23 +964,30 @@ async function main() {
   const failures = [];
 
   try {
-    for (const [index, url] of options.urls.entries()) {
-      const page = await context.newPage();
+    for (const [index, input] of options.inputs.entries()) {
+      let page;
+      const sourceLabel = input.value;
       try {
-        const rendered = await renderSourcePage(page, url);
-        const article = extractArticle(rendered.html, url);
-        article.loadWarnings = rendered.warnings;
-        await embedImages(article, context.request, url);
+        let article;
+        if (input.kind === "url") {
+          page = await context.newPage();
+          const rendered = await renderSourcePage(page, input.value);
+          article = extractArticle(rendered.html, input.value);
+          article.loadWarnings = rendered.warnings;
+        } else {
+          article = await loadArticleFile(input.value);
+        }
+        await embedImages(article, context.request, article.canonicalUrl);
         articles.push(article);
-        console.log(`[${index + 1}/${options.urls.length}] ${article.title}`);
-        console.log(`  source: ${url}`);
+        console.log(`[${index + 1}/${options.inputs.length}] ${article.title}`);
+        console.log(`  source: ${article.canonicalUrl}`);
         console.log(`  extraction: ${article.mode} (${article.words} words, ${article.paragraphs} paragraphs)`);
       } catch (error) {
-        failures.push({ error: error.message, url });
-        console.error(`[${index + 1}/${options.urls.length}] FAILED ${url}`);
+        failures.push({ error: error.message, source: sourceLabel });
+        console.error(`[${index + 1}/${options.inputs.length}] FAILED ${sourceLabel}`);
         console.error(`  ${error.message}`);
       } finally {
-        await page.close();
+        if (page) await page.close();
       }
     }
 
@@ -836,7 +1025,19 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(`Error: ${error.message}`);
-  process.exitCode = 1;
-});
+const isDirectRun =
+  process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+
+if (isDirectRun) {
+  main().catch((error) => {
+    console.error(`Error: ${error.message}`);
+    process.exitCode = 1;
+  });
+}
+
+export {
+  extractArticle,
+  normalizeSuppliedArticle,
+  renderSourcePage,
+  sanitizeContent,
+};

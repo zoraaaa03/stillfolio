@@ -42,11 +42,20 @@ node scripts/article-to-pdf.mjs URL1 URL2 URL3
 node scripts/article-to-pdf.mjs --combined URL1 URL2 URL3
 ```
 
+If browser navigation and the automatic direct-HTTP fallback both fail, Stillfolio can accept a validated, source-faithful article JSON recovered through another authorized path:
+
+```bash
+node scripts/article-to-pdf.mjs --article-file article.json
+```
+
+This fallback is for a demonstrably complete public article, not a summary, search snippet, subscription preview, or access-control workaround. See [`references/article-file.md`](references/article-file.md) for the schema and fidelity requirements.
+
 ## How it works
 
 ```text
 URL
   → browser rendering and lazy loading
+  → bounded direct-HTTP fallback if navigation fails
   → article extraction
   → generic DOM fallback
   → sanitization and image normalization
@@ -55,6 +64,18 @@ URL
 ```
 
 Stillfolio does not use the website's native Print to PDF output. It extracts the article first and applies an independent reading layout so website UI and advertising do not become part of the document.
+
+It also guards against false success: common access-preview markers, suspicious ellipsis endings, and output implausibly shorter than an advertised reading time are rejected instead of being presented as complete PDFs.
+
+## What it can convert
+
+The main constraint is not subject or editorial category; it is whether a complete, coherent public article can be retrieved:
+
+- Strong fit: news stories, essays, magazine features, blog posts, interviews, reviews, and university or institutional articles.
+- Usually workable: server-rendered pages and JavaScript pages that expose the article after bounded rendering.
+- Potentially lossy: live blogs, infinite scroll, galleries, complex tables, embedded social threads, and interactive charts.
+- Different workflows needed: audio, video, web applications, and existing PDF or office documents.
+- Out of scope: paywalls, logins, CAPTCHAs, geographic restrictions, anti-bot gates, and other access controls.
 
 ## Inspiration, references, and acknowledgements
 
@@ -98,4 +119,4 @@ The original Stillfolio source code currently has no separate open-source licens
 
 ## Limitations
 
-Article extraction cannot be perfect across every website. Paywalls, login pages, infinite scroll, interactive graphics, expiring image links, and anti-automation systems can result in missing text or images. Stillfolio reports these conditions rather than presenting an incomplete access page as a complete article.
+Article extraction cannot be perfect across every website. Network routes can fail even when a page remains publicly indexed, and infinite scroll, interactive graphics, expiring image links, or unusual markup can still cause missing content. Stillfolio uses bounded transport fallbacks and completeness heuristics, then requires inspection rather than presenting a known preview or access page as a complete article.

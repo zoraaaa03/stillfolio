@@ -13,12 +13,25 @@ Do not bypass a paywall, login, CAPTCHA, robots restriction, geographic restrict
 
 Some sites distinguish automated browsers, require consent, or return different HTML by region. Retrying may help a transient load, but persistent denial is a hard limitation.
 
+A browser navigation timeout is not automatically an access denial. The CLI makes one bounded direct HTTP attempt when navigation fails. If both transports fail, stop retrying. A complete public article obtained through another authorized tool can be passed through the validated [article-file handoff](article-file.md); a snippet, summary, preview, or uncertain reconstruction cannot.
+
+## Content compatibility
+
+Compatibility is shaped more by access and document structure than by editorial category:
+
+- Strong fit: public news stories, essays, magazine features, blog posts, interviews, reviews, and university or institutional articles with a coherent HTML body.
+- Usually workable: server-rendered pages and JavaScript pages whose article becomes available after bounded rendering and lazy loading.
+- Partial or lossy: live blogs, infinite-scroll series, image galleries, complex data tables, embedded social threads, and pages whose meaning depends on interactive charts.
+- Different medium: audio, video, web applications, and already-published PDF or office documents need format-specific workflows rather than article extraction.
+- Out of scope: paywalls, logins, CAPTCHAs, geographic restrictions, anti-bot gates, and other access controls.
+
 ## Extraction limits
 
 - JavaScript-delayed sections may appear after the script's bounded lazy-load pass and therefore remain unavailable.
 - Infinite-scroll pages, live blogs, embedded social posts, interactive charts, audio, and video do not map reliably to static article PDFs.
 - Generic DOM fallback can retain modest extra material or miss unusually structured body sections. Compare suspicious output with the source and improve generic scoring before considering a narrowly scoped site rule.
 - Metadata quality depends on JSON-LD, Open Graph, standard meta tags, and the article DOM. Missing or contradictory source metadata should remain missing rather than be invented.
+- Reading-time and access-preview checks catch common false successes but cannot prove completeness. Verify the first and last paragraphs and investigate implausible counts.
 
 ## Image limits
 
