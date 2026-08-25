@@ -1,101 +1,101 @@
 # Stillfolio · 静页
 
-> 从嘈杂的网页，回到安静的长文。
+**English** | [简体中文](README.zh-CN.md)
 
-Stillfolio 是一个个人 Codex Skill：输入一篇或多篇公开文章的 URL，得到适合阅读、批注与归档的 PDF。它保留正文顺序、标题、作者、发布日期、链接、正文图片与图注，同时尽量移除广告、导航、订阅框、评论和推荐内容。
+Stillfolio is a personal Codex Skill that turns one or more public article URLs into PDFs for reading, annotation, and archiving. It preserves article order, title, author, publication date, links, meaningful images, and captions while removing ads, navigation, signup boxes, comments, and recommendations where possible.
 
-技术标识仍为 `web-article-to-pdf`。这样既保留清晰可靠的自动触发，又让它拥有一个更像阅读工具的名字。
+The technical skill identifier remains `web-article-to-pdf`, keeping its automatic invocation clear and reliable.
 
-## 名字
+## The name
 
-**Stillfolio** 由两个词组成：
+**Stillfolio** combines:
 
-- **still**：安静的，也指把不断变化的网页“定格”下来；
-- **folio**：成册的书页、可收藏的纸本。
+- **still**: quiet, and also a way to hold a changing webpage still;
+- **folio**: a gathered set of pages made to be read and kept.
 
-中文名 **静页** 说的是同一件事：不复制网站的喧闹外观，只留下文章本身，以及它应有的来源与署名。
+The Chinese name **静页** expresses the same idea: preserve the article and its attribution without reproducing the noise of the website around it.
 
-## 使用
+## Use it
 
-对 Codex 说：
+Ask Codex:
 
 ```text
-把这篇文章转成干净、适合阅读的 PDF：<URL>
+Convert this article into a clean reading PDF: <URL>
 ```
 
-或显式调用：
+Or invoke the skill explicitly:
 
 ```text
 Use $web-article-to-pdf to convert <URL> into a clean reading PDF.
 ```
 
-直接运行：
+Run the CLI directly:
 
 ```bash
 node scripts/article-to-pdf.mjs "https://example.com/article"
 ```
 
-多篇文章可分别导出，也可以合成阅读包：
+Export several articles separately or create one reading packet:
 
 ```bash
 node scripts/article-to-pdf.mjs URL1 URL2 URL3
 node scripts/article-to-pdf.mjs --combined URL1 URL2 URL3
 ```
 
-## 工作方式
+## How it works
 
 ```text
 URL
-  → 浏览器渲染与懒加载
-  → 正文提取
-  → 通用 DOM 回退
-  → 安全清理与图片归一化
-  → 阅读版排版
-  → 带页码与来源链接的 PDF
+  → browser rendering and lazy loading
+  → article extraction
+  → generic DOM fallback
+  → sanitization and image normalization
+  → reading-focused typesetting
+  → PDF with page numbers and source links
 ```
 
-Stillfolio 不使用网站原生的“打印为 PDF”。它先提取文章，再用独立的阅读样式排版，以避免把网页界面和广告一起印进文件。
+Stillfolio does not use the website's native Print to PDF output. It extracts the article first and applies an independent reading layout so website UI and advertising do not become part of the document.
 
-## 灵感、参考与致谢
+## Inspiration, references, and acknowledgements
 
-Stillfolio 站在一条很长的“阅读模式”传统上。这里把“实际依赖”和“概念参考”分开说明，避免把灵感误写成原创，也避免暗示不存在的合作关系。
+Stillfolio belongs to a long tradition of reader modes. This section separates direct dependencies from conceptual references so that inspiration is credited accurately without implying a partnership.
 
-### 实际依赖
+### Direct dependencies
 
-| 项目 | 在 Stillfolio 中的作用 | 许可与署名 |
+| Project | Role in Stillfolio | License and attribution |
 |---|---|---|
-| [Mozilla Readability](https://github.com/mozilla/readability) | 从 DOM 中识别标题、署名与文章正文；这是 Firefox Reader View 使用的独立正文提取库 | Apache License 2.0；其 NOTICE 署名 Arc90 Inc、Mozilla 及贡献者 |
-| [Playwright](https://github.com/microsoft/playwright) | 渲染需要 JavaScript 的页面、触发懒加载，并把清理后的 HTML 输出为 PDF | Apache License 2.0；Microsoft 及贡献者 |
-| [jsdom](https://github.com/jsdom/jsdom) | 在 Node.js 中解析、检查与清理 DOM | MIT License；jsdom 作者与贡献者 |
+| [Mozilla Readability](https://github.com/mozilla/readability) | Identifies article titles, bylines, metadata, and body content from the DOM; it is the standalone extraction library used by Firefox Reader View | Apache License 2.0; its NOTICE credits Arc90 Inc, Mozilla, and contributors |
+| [Playwright](https://github.com/microsoft/playwright) | Renders JavaScript-dependent pages, triggers lazy loading, and prints the cleaned HTML as PDF | Apache License 2.0; Microsoft and contributors |
+| [jsdom](https://github.com/jsdom/jsdom) | Parses, inspects, and sanitizes DOM content in Node.js | MIT License; jsdom authors and contributors |
 
-这些项目的名称和商标属于各自权利人。Stillfolio 是独立项目，与 Mozilla、Microsoft、jsdom 项目及任何被转换的网站均无隶属、赞助或背书关系。第三方依赖继续受各自许可证约束；安装后的依赖目录中保留其许可证与 NOTICE 文件。
+The names and trademarks of these projects belong to their respective owners. Stillfolio is independent and is not affiliated with, sponsored by, or endorsed by Mozilla, Microsoft, the jsdom project, or any website it processes. Third-party dependencies remain governed by their own licenses; installed dependency directories retain their license and NOTICE files.
 
-### 概念参考
+### Conceptual references
 
-- [Percollate](https://github.com/danburzo/percollate) 证明了“网页 → 正文提取 → 自定义排版 → 阅读文件”是一条优雅、可维护的命令行工作流，也启发了多 URL 与阅读包的交互方式。
-- Firefox Reader View、浏览器阅读模式与传统长文编辑排版，共同启发了“内容优先、低装饰、舒适行距、清晰层级”的设计原则。
+- [Percollate](https://github.com/danburzo/percollate) demonstrated that “webpage → extraction → custom typesetting → reading document” can be an elegant, maintainable command-line workflow. It also informed the interaction model for multiple URLs and combined reading packets.
+- Firefox Reader View, browser reader modes, and traditional long-form editorial typography informed the content-first layout, restrained decoration, comfortable spacing, and clear hierarchy.
 
-当前实现没有复制 Percollate 的源码或模板，也没有复刻 HuffPost、Aeon 或其他媒体的视觉设计。版式和清理逻辑为本 Skill 独立实现。
+The current implementation does not copy Percollate source code or templates, and it does not reproduce the visual design of HuffPost, Aeon, or any other publisher. Its extraction extensions, sanitization, and reading layout are independently implemented for this Skill.
 
-## 版权与负责任使用
+## Copyright and responsible use
 
-Stillfolio 处理的是文章的**副本格式**，不是文章版权的转让：
+Stillfolio changes the **format of a copy**; it does not transfer copyright in the article:
 
-- 文章文字、摄影、插画、图注及其他内容的权利仍属于原作者、摄影师、插画师、出版方或其他权利人。
-- 生成 PDF 不会赋予使用者转载、公开传播、销售或再授权文章内容的权利。
-- 仅处理你有权访问的公开页面，并仅在适用法律、网站条款和权利人许可允许的范围内用于个人阅读、批注、研究或归档。
-- 未经许可，不要公开上传或分发生成的 PDF；引用时应保留作者、出版方和原始 URL。
-- 不绕过付费墙、登录、CAPTCHA、地域限制、反机器人措施或其他访问控制。
-- 图片无法合法或可靠获取时，工具会继续生成 PDF 并报告缺失，而不是规避限制。
+- Rights in article text, photography, illustration, captions, and other content remain with their authors, photographers, illustrators, publishers, or other rights holders.
+- Creating a PDF does not grant permission to republish, publicly distribute, sell, or sublicense the article.
+- Process only publicly accessible pages you are authorized to access, and use the results only as permitted by applicable law, site terms, and rights-holder permissions.
+- Do not upload or distribute generated PDFs without permission. Preserve author, publisher, and original URL information when quoting or citing a source.
+- Do not bypass paywalls, logins, CAPTCHAs, geographic restrictions, anti-bot systems, or other access controls.
+- If an image cannot be retrieved lawfully and reliably, the tool continues without it and reports the omission instead of circumventing the restriction.
 
-每份 PDF 都会在末尾保留原始文章 URL；有可用元数据时，也会保留作者、出版方和发布日期。这些信息不应被删除或用于制造来源不明的副本。
+Every PDF retains the original article URL and, when available, the author, publication, and publication date. Do not remove this information to create unattributed copies.
 
-本段是项目的使用原则，不构成法律意见。若用途涉及公开传播、教学材料、机构归档或商业使用，请根据所在地法律与来源网站条款另行确认授权。
+These are project usage principles, not legal advice. For public distribution, teaching materials, institutional archiving, or commercial use, independently confirm the necessary permissions under applicable law and source-site terms.
 
-## Skill 源码许可
+## License for original Skill code
 
-本 Skill 的原创源码目前未附加单独的开源许可证。个人安装和使用不受影响；如需公开发布、商业分发、修改后再授权或纳入其他产品，应先由源码权利人选择并添加合适的 `LICENSE`。第三方依赖不受这一说明影响，始终按各自许可证使用。
+The original Stillfolio source code currently has no separate open-source license. Public availability is not permission to copy, modify, redistribute, commercialize, or relicense it beyond rights provided by applicable law and GitHub's Terms of Service. Contact the source-code rights holder for permission unless a license is added later. Third-party dependencies are unaffected and always remain subject to their respective licenses.
 
-## 边界
+## Limitations
 
-正文提取不是对所有网站都完美。付费墙、登录页、无限滚动、交互图表、短时效图片链接和反自动化保护都可能造成内容或图片缺失。Stillfolio 会报告这些情况，而不会把不完整页面冒充成完整文章。
+Article extraction cannot be perfect across every website. Paywalls, login pages, infinite scroll, interactive graphics, expiring image links, and anti-automation systems can result in missing text or images. Stillfolio reports these conditions rather than presenting an incomplete access page as a complete article.
