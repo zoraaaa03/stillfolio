@@ -1,0 +1,101 @@
+# Stillfolio · 静页
+
+> 从嘈杂的网页，回到安静的长文。
+
+Stillfolio 是一个个人 Codex Skill：输入一篇或多篇公开文章的 URL，得到适合阅读、批注与归档的 PDF。它保留正文顺序、标题、作者、发布日期、链接、正文图片与图注，同时尽量移除广告、导航、订阅框、评论和推荐内容。
+
+技术标识仍为 `web-article-to-pdf`。这样既保留清晰可靠的自动触发，又让它拥有一个更像阅读工具的名字。
+
+## 名字
+
+**Stillfolio** 由两个词组成：
+
+- **still**：安静的，也指把不断变化的网页“定格”下来；
+- **folio**：成册的书页、可收藏的纸本。
+
+中文名 **静页** 说的是同一件事：不复制网站的喧闹外观，只留下文章本身，以及它应有的来源与署名。
+
+## 使用
+
+对 Codex 说：
+
+```text
+把这篇文章转成干净、适合阅读的 PDF：<URL>
+```
+
+或显式调用：
+
+```text
+Use $web-article-to-pdf to convert <URL> into a clean reading PDF.
+```
+
+直接运行：
+
+```bash
+node scripts/article-to-pdf.mjs "https://example.com/article"
+```
+
+多篇文章可分别导出，也可以合成阅读包：
+
+```bash
+node scripts/article-to-pdf.mjs URL1 URL2 URL3
+node scripts/article-to-pdf.mjs --combined URL1 URL2 URL3
+```
+
+## 工作方式
+
+```text
+URL
+  → 浏览器渲染与懒加载
+  → 正文提取
+  → 通用 DOM 回退
+  → 安全清理与图片归一化
+  → 阅读版排版
+  → 带页码与来源链接的 PDF
+```
+
+Stillfolio 不使用网站原生的“打印为 PDF”。它先提取文章，再用独立的阅读样式排版，以避免把网页界面和广告一起印进文件。
+
+## 灵感、参考与致谢
+
+Stillfolio 站在一条很长的“阅读模式”传统上。这里把“实际依赖”和“概念参考”分开说明，避免把灵感误写成原创，也避免暗示不存在的合作关系。
+
+### 实际依赖
+
+| 项目 | 在 Stillfolio 中的作用 | 许可与署名 |
+|---|---|---|
+| [Mozilla Readability](https://github.com/mozilla/readability) | 从 DOM 中识别标题、署名与文章正文；这是 Firefox Reader View 使用的独立正文提取库 | Apache License 2.0；其 NOTICE 署名 Arc90 Inc、Mozilla 及贡献者 |
+| [Playwright](https://github.com/microsoft/playwright) | 渲染需要 JavaScript 的页面、触发懒加载，并把清理后的 HTML 输出为 PDF | Apache License 2.0；Microsoft 及贡献者 |
+| [jsdom](https://github.com/jsdom/jsdom) | 在 Node.js 中解析、检查与清理 DOM | MIT License；jsdom 作者与贡献者 |
+
+这些项目的名称和商标属于各自权利人。Stillfolio 是独立项目，与 Mozilla、Microsoft、jsdom 项目及任何被转换的网站均无隶属、赞助或背书关系。第三方依赖继续受各自许可证约束；安装后的依赖目录中保留其许可证与 NOTICE 文件。
+
+### 概念参考
+
+- [Percollate](https://github.com/danburzo/percollate) 证明了“网页 → 正文提取 → 自定义排版 → 阅读文件”是一条优雅、可维护的命令行工作流，也启发了多 URL 与阅读包的交互方式。
+- Firefox Reader View、浏览器阅读模式与传统长文编辑排版，共同启发了“内容优先、低装饰、舒适行距、清晰层级”的设计原则。
+
+当前实现没有复制 Percollate 的源码或模板，也没有复刻 HuffPost、Aeon 或其他媒体的视觉设计。版式和清理逻辑为本 Skill 独立实现。
+
+## 版权与负责任使用
+
+Stillfolio 处理的是文章的**副本格式**，不是文章版权的转让：
+
+- 文章文字、摄影、插画、图注及其他内容的权利仍属于原作者、摄影师、插画师、出版方或其他权利人。
+- 生成 PDF 不会赋予使用者转载、公开传播、销售或再授权文章内容的权利。
+- 仅处理你有权访问的公开页面，并仅在适用法律、网站条款和权利人许可允许的范围内用于个人阅读、批注、研究或归档。
+- 未经许可，不要公开上传或分发生成的 PDF；引用时应保留作者、出版方和原始 URL。
+- 不绕过付费墙、登录、CAPTCHA、地域限制、反机器人措施或其他访问控制。
+- 图片无法合法或可靠获取时，工具会继续生成 PDF 并报告缺失，而不是规避限制。
+
+每份 PDF 都会在末尾保留原始文章 URL；有可用元数据时，也会保留作者、出版方和发布日期。这些信息不应被删除或用于制造来源不明的副本。
+
+本段是项目的使用原则，不构成法律意见。若用途涉及公开传播、教学材料、机构归档或商业使用，请根据所在地法律与来源网站条款另行确认授权。
+
+## Skill 源码许可
+
+本 Skill 的原创源码目前未附加单独的开源许可证。个人安装和使用不受影响；如需公开发布、商业分发、修改后再授权或纳入其他产品，应先由源码权利人选择并添加合适的 `LICENSE`。第三方依赖不受这一说明影响，始终按各自许可证使用。
+
+## 边界
+
+正文提取不是对所有网站都完美。付费墙、登录页、无限滚动、交互图表、短时效图片链接和反自动化保护都可能造成内容或图片缺失。Stillfolio 会报告这些情况，而不会把不完整页面冒充成完整文章。

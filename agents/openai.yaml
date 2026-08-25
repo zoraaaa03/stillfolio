@@ -1,0 +1,4 @@
+interface:
+  display_name: "Stillfolio · 静页"
+  short_description: "Turn noisy articles into quiet reading PDFs"
+  default_prompt: "Use $web-article-to-pdf to turn this article into a quiet, source-faithful reading PDF."
