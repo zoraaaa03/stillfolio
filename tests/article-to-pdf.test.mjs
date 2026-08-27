@@ -42,6 +42,16 @@ test("does not reject a complete article that discusses preview wording in prose
   assert.ok(article.words >= 120);
 });
 
+test("recovers a publication date from a generic post metadata element", () => {
+  const html = page(
+    prose(150),
+    '<div class="post-meta">by <span class="post-author">Example Author</span>' +
+      '<span class="post-date">September 3, 2015</span></div>',
+  );
+  const article = extractArticle(html, SOURCE_URL);
+  assert.equal(article.published, "September 3, 2015");
+});
+
 test("removes image interaction prompts without removing the figure", () => {
   const cleaned = sanitizeContent(
     `<figure><div><p><span>Press enter or click to view image in full size</span></p>` +

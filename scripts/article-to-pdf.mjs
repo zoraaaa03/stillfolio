@@ -243,6 +243,35 @@ function domAuthorName(document) {
   return "";
 }
 
+function domPublishedDate(document) {
+  const selector = [
+    '[itemprop="datePublished"]',
+    '[data-testid*="publish" i][data-testid*="date" i]',
+    '[class*="date-published" i]',
+    '[class*="publish-date" i]',
+    '[class*="published-date" i]',
+    '[class*="post-date" i]',
+    '[class*="entry-date" i]',
+    '[class*="article-date" i]',
+  ].join(", ");
+  const month =
+    "January|February|March|April|May|June|July|August|September|October|November|December";
+  const patterns = [
+    new RegExp(`\\b(?:${month})\\s+\\d{1,2}(?:st|nd|rd|th)?(?:,)?\\s+\\d{4}\\b`, "i"),
+    new RegExp(`\\b\\d{1,2}(?:st|nd|rd|th)?\\s+(?:${month})\\s+\\d{4}\\b`, "i"),
+    /\b\d{4}-\d{2}-\d{2}\b/,
+  ];
+  for (const element of document.querySelectorAll(selector)) {
+    const text = cleanText(element.getAttribute("datetime") || element.textContent);
+    if (!text || text.length > 160) continue;
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match) return match[0];
+    }
+  }
+  return "";
+}
+
 function extractMetadata(document, sourceUrl) {
   const ld = jsonLdArticles(document)[0] || {};
   const canonical = document.querySelector('link[rel="canonical"]')?.href;
@@ -279,7 +308,8 @@ function extractMetadata(document, sourceUrl) {
         "parsely-pub-date",
       ) ||
       dateElement?.getAttribute("datetime") ||
-      dateElement?.textContent,
+      dateElement?.textContent ||
+      domPublishedDate(document),
   );
   return {
     author,
@@ -805,8 +835,9 @@ function localIsoDate() {
 
 function articleMarkup(article, index, combined) {
   const metaParts = [article.author, article.publication, formatDate(article.published)].filter(Boolean);
+  const lengthClass = article.words < 1_000 ? " short-article" : "";
   return `
-    <article class="reading-article${combined && index > 0 ? " packet-break" : ""}">
+    <article class="reading-article${lengthClass}${combined && index > 0 ? " packet-break" : ""}">
       <header class="article-header">
         <h1>${escapeHtml(article.title)}</h1>
         ${article.subtitle ? `<p class="deck">${escapeHtml(article.subtitle)}</p>` : ""}
@@ -862,13 +893,14 @@ function readingHtml(articles, { combined }) {
     a { color: #234f7d; text-decoration-thickness: 0.06em; text-underline-offset: 0.12em; overflow-wrap: anywhere; }
     figure { margin: 1.35em 0 1.55em; break-inside: avoid; }
     img { display: block; max-width: 100%; max-height: 8.1in; width: auto; height: auto; margin: 0 auto; object-fit: contain; }
+    .short-article .article-body img { max-height: 4.25in; }
     figcaption { margin: 0.55em auto 0; max-width: 94%; color: #68635c; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 8.5pt; line-height: 1.35; }
     .image-unavailable { display: none; }
     table { width: 100%; margin: 1em 0; border-collapse: collapse; font-size: 9pt; break-inside: auto; }
     th, td { padding: 0.35em 0.45em; border: 1px solid #c8c4bd; vertical-align: top; }
     tr { break-inside: avoid; }
     hr { margin: 1.6em 0; border: 0; border-top: 1px solid #c8c4bd; }
-    .source-note { margin-top: 2.6rem; padding-top: 0.85rem; border-top: 1px solid #d9d6cf; color: #68635c; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 8.5pt; line-height: 1.45; }
+    .source-note { margin-top: 0.65rem; padding-top: 0.45rem; border-top: 1px solid #d9d6cf; color: #68635c; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 8.5pt; line-height: 1.35; break-inside: avoid; }
     @media print {
       a { color: #183e64; }
       .reading-article { max-width: none; }
